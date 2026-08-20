@@ -1,0 +1,193 @@
+module can_bus_controller (
+    input wire clk,
+    input wire reset,
+
+    // Transmit Interface
+    input wire tx_start,
+    input wire [10:0] tx_id,
+    input wire [7:0] tx_data,
+
+    // CAN Bus Input
+    input wire can_rx,
+
+    // CAN Bus Output
+    output reg can_tx,
+
+    // Receive Interface
+    output reg [10:0] rx_id,
+    output reg [7:0] rx_data,
+    output reg rx_valid,
+
+    // Status
+    output reg busy,
+    output reg done
+);
+
+    // FSM States
+    localparam IDLE      = 4'd0;
+    localparam TX_SOF    = 4'd1;
+    localparam TX_ID     = 4'd2;
+    localparam TX_DATA   = 4'd3;
+    localparam TX_ACK    = 4'd4;
+    localparam TX_DONE   = 4'd5;
+
+    localparam RX_SOF    = 4'd6;
+    localparam RX_ID     = 4'd7;
+    localparam RX_DATA   = 4'd8;
+    localparam RX_DONE   = 4'd9;
+
+    reg [3:0] state;
+
+    reg [10:0] id_reg;
+    reg [7:0] data_reg;
+
+    reg [3:0] bit_count;
+
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            state     <= IDLE;
+            can_tx    <= 1'b1; // CAN idle state = recessive
+            busy      <= 1'b0;
+            done      <= 1'b0;
+            rx_valid  <= 1'b0;
+            rx_id     <= 11'd0;
+            rx_data   <= 8'd0;
+            id_reg    <= 11'd0;
+            data_reg  <= 8'd0;
+            bit_count <= 4'd0;
+        end
+        else begin
+            done     <= 1'b0;
+            rx_valid <= 1'b0;
+
+            case (state)
+
+                // =========================
+                // IDLE STATE
+                // =========================
+                IDLE: begin
+                    can_tx <= 1'b1;
+                    busy   <= 1'b0;
+
+                    // Start transmission
+                    if (tx_start) begin
+                        id_reg    <= tx_id;
+                        data_reg  <= tx_data;
+                        busy      <= 1'b1;
+                        state     <= TX_SOF;
+                    end
+
+                    // Detect received frame
+                    else if (can_rx == 1'b0) begin
+                        bit_count <= 4'd10;
+                        state <= RX_ID;
+                    end
+                end
+
+                // =========================
+                // TRANSMIT START OF FRAME
+                // =========================
+                TX_SOF: begin
+                    can_tx <= 1'b0;
+                    bit_count <= 4'd10;
+                    state <= TX_ID;
+                end
+
+                // =========================
+                // TRANSMIT 11-BIT ID
+                // =========================
+                TX_ID: begin
+                    can_tx <= id_reg[bit_count];
+
+                    if (bit_count == 0) begin
+                        bit_count <= 4'd7;
+                        state <= TX_DATA;
+                    end
+                    else begin
+                        bit_count <= bit_count - 1'b1;
+                    end
+                end
+
+                // =========================
+                // TRANSMIT 8-BIT DATA
+                // =========================
+                TX_DATA: begin
+                    can_tx <= data_reg[bit_count];
+
+                    if (bit_count == 0) begin
+                        state <= TX_ACK;
+                    end
+                    else begin
+                        bit_count <= bit_count - 1'b1;
+                    end
+                end
+
+                // =========================
+                // ACK SLOT
+                // =========================
+                TX_ACK: begin
+                    // Release bus for ACK
+                    can_tx <= 1'b1;
+
+                    if (can_rx == 1'b0)
+                        state <= TX_DONE;
+                    else
+                        state <= TX_DONE;
+                end
+
+                // =========================
+                // TRANSMISSION COMPLETE
+                // =========================
+                TX_DONE: begin
+                    can_tx <= 1'b1;
+                    busy   <= 1'b0;
+                    done   <= 1'b1;
+                    state  <= IDLE;
+                end
+
+                // =========================
+                // RECEIVE 11-BIT ID
+                // =========================
+                RX_ID: begin
+                    id_reg[bit_count] <= can_rx;
+
+                    if (bit_count == 0) begin
+                        bit_count <= 4'd7;
+                        state <= RX_DATA;
+                    end
+                    else begin
+                        bit_count <= bit_count - 1'b1;
+                    end
+                end
+
+                // =========================
+                // RECEIVE 8-BIT DATA
+                // =========================
+                RX_DATA: begin
+                    data_reg[bit_count] <= can_rx;
+
+                    if (bit_count == 0)
+                        state <= RX_DONE;
+                    else
+                        bit_count <= bit_count - 1'b1;
+                end
+
+                // =========================
+                // RECEIVE COMPLETE
+                // =========================
+                RX_DONE: begin
+                    rx_id    <= id_reg;
+                    rx_data  <= data_reg;
+                    rx_valid <= 1'b1;
+                    state    <= IDLE;
+                end
+
+                default: begin
+                    state <= IDLE;
+                end
+
+            endcase
+        end
+    end
+
+endmodule

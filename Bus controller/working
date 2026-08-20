@@ -1,0 +1,11 @@
+tx_start = 1
+      ↓
+Start of Frame
+      ↓
+Transmit 11-bit CAN ID
+      ↓
+Transmit 8-bit Data
+      ↓
+Wait for ACK
+      ↓
+done = 1

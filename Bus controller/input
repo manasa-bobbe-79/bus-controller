@@ -1,0 +1,9 @@
+CAN Bus
+   ↓
+Detect SOF
+   ↓
+Receive 11-bit ID
+   ↓
+Receive 8-bit Data
+   ↓
+rx_valid = 1
